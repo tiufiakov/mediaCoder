@@ -1,0 +1,28 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.png
+
+# Test / coverage
+*.test
+*.out
+coverage.out
+
+# Go workspace / build cache
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Vendor only if you don't want to commit dependencies
+# vendor/
+
+# Local env files
+.env
