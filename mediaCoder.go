@@ -6,7 +6,7 @@ import (
 	"github.com/tiufiakov/mediaCoder/db"
 )
 
-func main() {
+func Start() {
 	connstring := "user=postgres password=1234 dbname=mediaCoder host=localhost port=5432 sslmode=disable"
 
 	database, err := db.ConnectToPostgres(connstring)
