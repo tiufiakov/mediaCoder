@@ -3,9 +3,9 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/lib/pq"
-	"io/ioutil"
 	"log"
+
+	_ "github.com/lib/pq"
 )
 
 func ConnectToPostgres(connString string) (*sql.DB, error) {
@@ -23,13 +23,13 @@ func ConnectToPostgres(connString string) (*sql.DB, error) {
 }
 
 func RunMigrations(db *sql.DB) error {
+	migrationsSQL := "CREATE TABLE IF NOT EXISTS files (id UUID PRIMARY KEY,name TEXT NOT NULL,path TEXT NOT NULL,media_type TEXT NOT NULL,created_at TIMESTAMP NOT NULL DEFAULT NOW())"
+	//migrationsSQL, err := ioutil.ReadFile("db/migrations/000001_create_files_table.down.sql")
+	//if err != nil {
+	//	return fmt.Errorf("не удалось прочитать файл миграций: %v", err)
+	//}
 
-	migrationsSQL, err := ioutil.ReadFile("db/migrations/000001_create_files_table.down.sql")
-	if err != nil {
-		return fmt.Errorf("не удалось прочитать файл миграций: %v", err)
-	}
-
-	_, err = db.Exec(string(migrationsSQL))
+	_, err := db.Exec(string(migrationsSQL))
 	if err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
