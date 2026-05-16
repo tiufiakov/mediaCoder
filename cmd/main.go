@@ -10,6 +10,8 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"github.com/tiufiakov/mediaCoder/db"
 )
 
 func uuidToBytes(uuid string) []byte {
@@ -179,20 +181,32 @@ outer:
 }
 
 func main() {
-	uuid := "7955bb19-b7cf-47d5-a7c2-33a997b34b86"
-	inputPath := "/home/ilia/GolandProjects/рабочий код для внедрения uuid в изображения/7.png"
-	outputPath := "/home/ilia/GolandProjects/рабочий код для внедрения uuid в изображения/6.png"
 
-	bytes := uuidToBytes(uuid)
-	fmt.Printf("TEST uuidToBytes[15] = 0x%02x\n", bytes[15]) // Должно быть 0x86!
-	fmt.Printf("TEST bytesToUUID = %s\n", bytesToUUID(bytes))
-	embedUUID(inputPath, outputPath, uuid)
-	extractedUUID := extractUUID(outputPath)
-	fmt.Printf("🔍 %s\n", extractedUUID)
+	connstring := "user=postgres password=1234 dbname=mediaCoder host=localhost port=5432 sslmode=disable"
 
-	if extractedUUID == uuid {
-		fmt.Println("✅ UUID успешно извлечён!")
-	} else {
-		fmt.Println("❌ UUID не совпадает!")
+	database, err := db.ConnectToPostgres(connstring)
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	defer database.Close()
+
+	err = db.RunMigrations(database)
+
+	//uuid := "7955bb19-b7cf-47d5-a7c2-33a997b34b86"
+	//inputPath := "/home/ilia/GolandProjects/рабочий код для внедрения uuid в изображения/7.png"
+	//outputPath := "/home/ilia/GolandProjects/рабочий код для внедрения uuid в изображения/6.png"
+	//
+	//bytes := uuidToBytes(uuid)
+	//fmt.Printf("TEST uuidToBytes[15] = 0x%02x\n", bytes[15]) // Должно быть 0x86!
+	//fmt.Printf("TEST bytesToUUID = %s\n", bytesToUUID(bytes))
+	//embedUUID(inputPath, outputPath, uuid)
+	//extractedUUID := extractUUID(outputPath)
+	//fmt.Printf("🔍 %s\n", extractedUUID)
+	//
+	//if extractedUUID == uuid {
+	//	fmt.Println("✅ UUID успешно извлечён!")
+	//} else {
+	//	fmt.Println("❌ UUID не совпадает!")
+	//}
 }
