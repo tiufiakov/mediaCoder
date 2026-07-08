@@ -21,7 +21,6 @@ func New(
 		imageCoder: img,
 	}
 }
-
 func (v *VideoCoder) EmbedUUID(
 	input string,
 	output string,
@@ -30,23 +29,14 @@ func (v *VideoCoder) EmbedUUID(
 
 	tmp := "frames"
 
-	err := os.MkdirAll(
-		tmp,
-		0755,
-	)
+	os.MkdirAll(tmp, 0755)
 
-	if err != nil {
-		return err
-	}
+	// 1. Извлекаем ВСЕ кадры
 
-	// извлекаем первые 3 кадра
-
-	err = ffmpeg_go.Input(input).
+	err := ffmpeg_go.Input(input).
 		Output(
-			fmt.Sprintf("%s/frame-%%03d.png", tmp),
-			ffmpeg_go.KwArgs{
-				"vframes": 3,
-			},
+			fmt.Sprintf("%s/frame-%%05d.png", tmp),
+			ffmpeg_go.KwArgs{},
 		).
 		Run()
 
@@ -54,29 +44,29 @@ func (v *VideoCoder) EmbedUUID(
 		return err
 	}
 
-	// изменяем кадры
+	// 2. Меняем первые 3
 
 	for i := 1; i <= 3; i++ {
 
-		filename := fmt.Sprintf(
-			"%s/frame-%03d.png",
+		frame := fmt.Sprintf(
+			"%s/frame-%05d.png",
 			tmp,
 			i,
 		)
 
 		v.imageCoder.EmbedUUID(
-			filename,
-			filename,
+			frame,
+			frame,
 			uuid,
 		)
 
 	}
 
-	// собираем видео обратно
+	// 3. Собираем видео
 
-	err = ffmpeg_go.Input(
+	return ffmpeg_go.Input(
 		fmt.Sprintf(
-			"%s/frame-%%03d.png",
+			"%s/frame-%%05d.png",
 			tmp,
 		),
 	).
@@ -85,11 +75,10 @@ func (v *VideoCoder) EmbedUUID(
 			ffmpeg_go.KwArgs{
 				"c:v":     "libx264",
 				"pix_fmt": "yuv420p",
+				"r":       "30",
 			},
 		).
 		Run()
-
-	return err
 }
 
 func (v *VideoCoder) ExtractUUID(
@@ -115,7 +104,7 @@ func (v *VideoCoder) ExtractUUID(
 	)
 
 	if err != nil {
-		return "", err
+		return "ошибка извлечения фреймов", err
 	}
 
 	var found []string
