@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"github.com/google/uuid"
 	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
+
+const videoStrength = 15
 
 type VideoCoder struct {
 	imageCoder *MediaCoder
@@ -24,19 +27,23 @@ func New(
 		imageCoder: img,
 	}
 }
+
 func (v *VideoCoder) EmbedUUID(
 	input string,
 	output string,
-	uuid string,
+	id string,
 ) error {
 
 	tmp := "frames"
 
-	os.MkdirAll(tmp, 0755)
+	err := os.MkdirAll(tmp, 0755)
+	if err != nil {
+		return err
+	}
 
-	// 1. Извлекаем ВСЕ кадры
+	// достаём все кадры
 
-	err := ffmpeg_go.Input(input).
+	err = ffmpeg_go.Input(input).
 		Output(
 			fmt.Sprintf("%s/frame-%%05d.png", tmp),
 			ffmpeg_go.KwArgs{},
@@ -47,7 +54,7 @@ func (v *VideoCoder) EmbedUUID(
 		return err
 	}
 
-	// 2. Меняем первые 3
+	// меняем первые 3 кадра
 
 	for i := 1; i <= 3; i++ {
 
@@ -57,15 +64,17 @@ func (v *VideoCoder) EmbedUUID(
 			i,
 		)
 
-		v.imageCoder.EmbedUUID(
+		err := v.embedFrame(
 			frame,
-			frame,
-			uuid,
+			id,
 		)
 
+		if err != nil {
+			return err
+		}
 	}
 
-	// 3. Собираем видео
+	// собираем видео
 
 	return ffmpeg_go.Input(
 		fmt.Sprintf(
@@ -86,12 +95,11 @@ func (v *VideoCoder) EmbedUUID(
 
 func (v *VideoCoder) ExtractUUID(
 	videoPath string,
-	imageExtractor *MediaCoder,
 ) (string, error) {
 
 	tmpDir, err := os.MkdirTemp(
 		"",
-		"mediacoder-frames",
+		"frames",
 	)
 
 	if err != nil {
@@ -109,7 +117,7 @@ func (v *VideoCoder) ExtractUUID(
 		return "", err
 	}
 
-	votes := make(map[string]int)
+	votes := map[string]int{}
 
 	for i := 1; i <= 3; i++ {
 
@@ -121,27 +129,24 @@ func (v *VideoCoder) ExtractUUID(
 			),
 		)
 
-		if _, err := os.Stat(frame); err != nil {
+		file, err := os.Open(frame)
+
+		if err != nil {
 			continue
 		}
 
-		id := imageExtractor.ExtractUUID(
-			frame,
-		)
+		img, _, err := image.Decode(file)
+		file.Close()
 
-		// пропускаем мусор
-		if id == "" ||
-			id == "00000000-0000-0000-0000-000000000000" {
+		if err != nil {
 			continue
 		}
 
-		votes[id]++
-	}
+		id := v.ExtractVideoUUID(img)
 
-	if len(votes) == 0 {
-		return "", fmt.Errorf(
-			"uuid not found",
-		)
+		if id != "" {
+			votes[id]++
+		}
 	}
 
 	var result string
@@ -155,7 +160,6 @@ func (v *VideoCoder) ExtractUUID(
 		}
 	}
 
-	// хотя бы 2 из 3 кадров должны совпасть
 	if max < 2 {
 		return "", fmt.Errorf(
 			"uuid not reliable",
@@ -163,6 +167,38 @@ func (v *VideoCoder) ExtractUUID(
 	}
 
 	return result, nil
+}
+
+func (v *VideoCoder) embedFrame(
+	path string,
+	id string,
+) error {
+
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+
+	img, _, err := image.Decode(file)
+	file.Close()
+
+	if err != nil {
+		return err
+	}
+
+	result := v.EmbedVideoUUID(
+		img,
+		id,
+	)
+
+	out, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	defer out.Close()
+
+	return png.Encode(out, result)
 }
 
 func extractFrames(
@@ -190,40 +226,50 @@ func extractFrames(
 	return cmd.Run()
 }
 
-const videoStrength = 15
+func (v *VideoCoder) EmbedVideoUUID(
+	img image.Image,
+	id string,
+) image.Image {
 
-func (v *VideoCoder) EmbedVideoUUID(img image.Image, UUID string) image.Image {
+	u := uuid.MustParse(id)
 
-	u := uuid.MustParse(UUID)
 	bits := uuidToBits(u)
 
 	bounds := img.Bounds()
+
 	out := image.NewRGBA(bounds)
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			out.Set(x, y, img.At(x, y))
+
+			out.Set(
+				x,
+				y,
+				img.At(x, y),
+			)
 		}
 	}
 
 	index := 0
 
 	for y := 0; y < bounds.Dy() && index < 128; y += 4 {
+
 		for x := 0; x < bounds.Dx() && index < 128; x += 4 {
 
 			r, g, b, a := out.At(x, y).RGBA()
 
-			rr := int(r >> 8)
+			change := videoStrength
 
-			if bits[index] == 1 {
-				rr += videoStrength
-			} else {
-				rr -= videoStrength
+			if bits[index] == 0 {
+				change = -videoStrength
 			}
+
+			rr := int(r>>8) + change
 
 			if rr < 0 {
 				rr = 0
 			}
+
 			if rr > 255 {
 				rr = 255
 			}
@@ -246,13 +292,16 @@ func (v *VideoCoder) EmbedVideoUUID(img image.Image, UUID string) image.Image {
 	return out
 }
 
-func (v *VideoCoder) ExtractVideoUUID(img image.Image) string {
+func (v *VideoCoder) ExtractVideoUUID(
+	img image.Image,
+) string {
 
 	bounds := img.Bounds()
 
 	bits := make([]byte, 0, 128)
 
 	for y := 0; y < bounds.Dy() && len(bits) < 128; y += 4 {
+
 		for x := 0; x < bounds.Dx() && len(bits) < 128; x += 4 {
 
 			r, _, _, _ := img.At(x, y).RGBA()
