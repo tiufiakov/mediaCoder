@@ -2,10 +2,13 @@ package mediaCoder
 
 import (
 	"fmt"
+	"image"
+	"image/color"
 	"os"
 	"os/exec"
 	"path/filepath"
 
+	"github.com/google/uuid"
 	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
@@ -185,4 +188,110 @@ func extractFrames(
 	)
 
 	return cmd.Run()
+}
+
+const videoStrength = 15
+
+func (v *VideoCoder) EmbedVideoUUID(img image.Image, UUID string) image.Image {
+
+	u := uuid.MustParse(UUID)
+	bits := uuidToBits(u)
+
+	bounds := img.Bounds()
+	out := image.NewRGBA(bounds)
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			out.Set(x, y, img.At(x, y))
+		}
+	}
+
+	index := 0
+
+	for y := 0; y < bounds.Dy() && index < 128; y += 4 {
+		for x := 0; x < bounds.Dx() && index < 128; x += 4 {
+
+			r, g, b, a := out.At(x, y).RGBA()
+
+			rr := int(r >> 8)
+
+			if bits[index] == 1 {
+				rr += videoStrength
+			} else {
+				rr -= videoStrength
+			}
+
+			if rr < 0 {
+				rr = 0
+			}
+			if rr > 255 {
+				rr = 255
+			}
+
+			out.Set(
+				x,
+				y,
+				color.RGBA{
+					uint8(rr),
+					uint8(g >> 8),
+					uint8(b >> 8),
+					uint8(a >> 8),
+				},
+			)
+
+			index++
+		}
+	}
+
+	return out
+}
+
+func (v *VideoCoder) ExtractVideoUUID(img image.Image) string {
+
+	bounds := img.Bounds()
+
+	bits := make([]byte, 0, 128)
+
+	for y := 0; y < bounds.Dy() && len(bits) < 128; y += 4 {
+		for x := 0; x < bounds.Dx() && len(bits) < 128; x += 4 {
+
+			r, _, _, _ := img.At(x, y).RGBA()
+
+			if r>>8 > 128 {
+				bits = append(bits, 1)
+			} else {
+				bits = append(bits, 0)
+			}
+		}
+	}
+
+	return bitsToUUID(bits)
+}
+
+func bitsToUUID(bits []byte) string {
+	if len(bits) < 128 {
+		return ""
+	}
+
+	bytes := make([]byte, 16)
+
+	for i := 0; i < 128; i++ {
+		if bits[i] == 1 {
+			bytes[i/8] |= 1 << (7 - uint(i%8))
+		}
+	}
+
+	return uuid.UUID(bytes).String()
+}
+
+func uuidToBits(u uuid.UUID) []byte {
+	bits := make([]byte, 0, 128)
+
+	for _, b := range u {
+		for i := 7; i >= 0; i-- {
+			bits = append(bits, (b>>uint(i))&1)
+		}
+	}
+
+	return bits
 }
