@@ -13,19 +13,17 @@ import (
 	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
-const videoStrength = 15
+const blockSize = 8
+const videoStrength = 20
 
 type VideoCoder struct {
-	imageCoder *MediaCoder
 }
 
 func New(
 	img *MediaCoder,
 ) *VideoCoder {
 
-	return &VideoCoder{
-		imageCoder: img,
-	}
+	return &VideoCoder{}
 }
 
 func (v *VideoCoder) EmbedUUID(
@@ -124,7 +122,7 @@ func (v *VideoCoder) ExtractUUID(
 		frame := filepath.Join(
 			tmpDir,
 			fmt.Sprintf(
-				"frame-%03d.png",
+				"frame-%05d.png",
 				i,
 			),
 		)
@@ -208,7 +206,7 @@ func extractFrames(
 
 	output := filepath.Join(
 		dir,
-		"frame-%03d.png",
+		"frame-%05d.png",
 	)
 
 	cmd := exec.Command(
@@ -232,7 +230,6 @@ func (v *VideoCoder) EmbedVideoUUID(
 ) image.Image {
 
 	u := uuid.MustParse(id)
-
 	bits := uuidToBits(u)
 
 	bounds := img.Bounds()
@@ -241,49 +238,49 @@ func (v *VideoCoder) EmbedVideoUUID(
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-
-			out.Set(
-				x,
-				y,
-				img.At(x, y),
-			)
+			out.Set(x, y, img.At(x, y))
 		}
 	}
 
 	index := 0
 
-	for y := 0; y < bounds.Dy() && index < 128; y += 4 {
+	for y := bounds.Min.Y; y+blockSize < bounds.Max.Y && index < 128; y += blockSize {
 
-		for x := 0; x < bounds.Dx() && index < 128; x += 4 {
+		for x := bounds.Min.X; x+blockSize < bounds.Max.X && index < 128; x += blockSize {
 
-			r, g, b, a := out.At(x, y).RGBA()
+			for by := 0; by < blockSize; by++ {
+				for bx := 0; bx < blockSize; bx++ {
 
-			change := videoStrength
+					r, g, b, a := out.At(x+bx, y+by).RGBA()
 
-			if bits[index] == 0 {
-				change = -videoStrength
+					value := int(r >> 8)
+
+					if bits[index] == 1 {
+						value += videoStrength
+					} else {
+						value -= videoStrength
+					}
+
+					if value < 0 {
+						value = 0
+					}
+
+					if value > 255 {
+						value = 255
+					}
+
+					out.Set(
+						x+bx,
+						y+by,
+						color.RGBA{
+							uint8(value),
+							uint8(g >> 8),
+							uint8(b >> 8),
+							uint8(a >> 8),
+						},
+					)
+				}
 			}
-
-			rr := int(r>>8) + change
-
-			if rr < 0 {
-				rr = 0
-			}
-
-			if rr > 255 {
-				rr = 255
-			}
-
-			out.Set(
-				x,
-				y,
-				color.RGBA{
-					uint8(rr),
-					uint8(g >> 8),
-					uint8(b >> 8),
-					uint8(a >> 8),
-				},
-			)
 
 			index++
 		}
