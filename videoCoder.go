@@ -97,17 +97,16 @@ func (v *VideoCoder) ExtractUUID(
 
 	defer os.RemoveAll(tmpDir)
 
-	// Извлекаем первые 3 кадра
 	err = extractFrames(
 		videoPath,
 		tmpDir,
 	)
 
 	if err != nil {
-		return "ошибка извлечения фреймов", err
+		return "", err
 	}
 
-	var found []string
+	votes := make(map[string]int)
 
 	for i := 1; i <= 3; i++ {
 
@@ -123,35 +122,44 @@ func (v *VideoCoder) ExtractUUID(
 			continue
 		}
 
-		findUUID := imageExtractor.ExtractUUID(
+		id := imageExtractor.ExtractUUID(
 			frame,
 		)
 
-		found = append(
-			found,
-			findUUID,
-		)
+		// пропускаем мусор
+		if id == "" ||
+			id == "00000000-0000-0000-0000-000000000000" {
+			continue
+		}
+
+		votes[id]++
 	}
 
-	if len(found) == 0 {
+	if len(votes) == 0 {
 		return "", fmt.Errorf(
 			"uuid not found",
 		)
 	}
 
-	// Проверяем совпадение
-	first := found[0]
+	var result string
+	max := 0
 
-	for _, id := range found[1:] {
+	for id, count := range votes {
 
-		if id != first {
-			return "", fmt.Errorf(
-				"uuid mismatch",
-			)
+		if count > max {
+			result = id
+			max = count
 		}
 	}
 
-	return first, nil
+	// хотя бы 2 из 3 кадров должны совпасть
+	if max < 2 {
+		return "", fmt.Errorf(
+			"uuid not reliable",
+		)
+	}
+
+	return result, nil
 }
 
 func extractFrames(
@@ -168,14 +176,13 @@ func extractFrames(
 		"ffmpeg",
 		"-i",
 		video,
-		"-frames:v",
-		"3",
+		"-vf",
+		"select=eq(n\\,0)+eq(n\\,1)+eq(n\\,2)",
+		"-vsync",
+		"0",
 		output,
 		"-y",
 	)
-
-	cmd.Stdout = nil
-	cmd.Stderr = nil
 
 	return cmd.Run()
 }
